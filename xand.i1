@@ -53,7 +53,6 @@
 .alias b = r10									; memory[xop1]
 .alias tmp0 = r12								; temporary registers
 .alias chop-mask = r13							; 0xFF
-.alias jump-to-c-addr = r14						; address of jump_to_c label
 .alias done-addr = r15							; address of done label
 .alias xand-exec-addr = r16 					; address of xand-exec label
 .alias terminate-addr = r17						; address of terminate label
@@ -73,7 +72,6 @@ init:
     move ?xip = ?zero       					; zero out the xand ip
     set ?chop-mask = #x00FF 					; chop mask of 0x00FF
     set ?max-signed = #127  					; largest positive value (grrr signed bytes)
-    set ?jump-to-c-addr = jump_to_c 			; jump_to_c address
     set ?done-addr = done           			; done address
     set ?xand-exec-addr = xand_exec 			; address of xand-exec
     set ?terminate-addr = terminate 			; address of terminate register
