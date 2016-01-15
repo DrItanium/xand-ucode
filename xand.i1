@@ -46,40 +46,40 @@
 ;-----------------------------------------------------------------------------
 ; xand microcode internal registers
 ;-----------------------------------------------------------------------------
-.alias xop0 = r6								; first operand address 
-.alias xop1 = r7								; second operand address 
-.alias xop2 = r8								; third operand address
-.alias a = r9									; memory[xop0]
-.alias b = r10									; memory[xop1]
-.alias tmp0 = r12								; temporary registers
-.alias chop-mask = r13							; 0xFF
-.alias done-addr = r15							; address of done label
-.alias xand-exec-addr = r16 					; address of xand-exec label
-.alias terminate-addr = r17						; address of terminate label
-.alias xip = r32								; xand instruction pointer
-.alias max-signed = r33							; largest positive value (127)
+.alias xop0 = r6                                ; first operand address 
+.alias xop1 = r7                                ; second operand address 
+.alias xop2 = r8                                ; third operand address
+.alias a = r9                                   ; memory[xop0]
+.alias b = r10                                  ; memory[xop1]
+.alias tmp0 = r12                               ; temporary registers
+.alias chop-mask = r13                          ; 0xFF
+.alias done-addr = r15                          ; address of done label
+.alias xand-exec-addr = r16                     ; address of xand-exec label
+.alias terminate-addr = r17                     ; address of terminate label
+.alias xip = r32                                ; xand instruction pointer
+.alias max-signed = r33                         ; largest positive value (127)
 
 ;-----------------------------------------------------------------------------
 ; xand code loop
 ; Some things to note:
-; 	1) iris1 uses unsigned values everywhere (we must handle signed values in the microcode)
+;   1) iris1 uses unsigned values everywhere (we must handle signed values in the microcode)
 ;   2) registers are 16-bits wide (1 word)
 ;   3) the data section is not byte oriented but word oriented (each address refers to a 16-bit value)
 ;-----------------------------------------------------------------------------
 .code
 .org #x0
 init:
-    move ?xip = ?zero       					; zero out the xand ip
-    set ?chop-mask = #x00FF 					; chop mask of 0x00FF
-    set ?max-signed = #127  					; largest positive value (grrr signed bytes)
-    set ?done-addr = done           			; done address
-    set ?xand-exec-addr = xand_exec 			; address of xand-exec
-    set ?terminate-addr = terminate 			; address of terminate register
+    move ?xip = ?zero                           ; zero out the xand ip
+    set ?chop-mask = #x00FF                     ; chop mask of 0x00FF
+    set ?max-signed = #127                      ; largest positive value (grrr signed bytes)
+    set ?done-addr = done                       ; done address
+    set ?xand-exec-addr = xand_exec             ; address of xand-exec
+    set ?terminate-addr = terminate             ; address of terminate register
 
-loop:											; program loop
-    gt ?micro-pred = ?xip, ?max-signed			; is the xand-ip > than max-signed?
+loop:                                           ; program loop
+    gt ?micro-pred = ?xip, ?max-signed          ; is the xand-ip > than max-signed?
     call if ?micro-pred then ?terminate-addr else ?xand-exec-addr 
-    branch loop									; keep looping
+    branch loop                                 ; keep looping
 
 ;-----------------------------------------------------------------------------
 ; The decode and potentially terminate phase
@@ -92,140 +92,140 @@ loop:											; program loop
 ; xip += 3
 ;-----------------------------------------------------------------------------
 xand_exec:
-    load ?xop0 = ?xip, data 					; load the first operand into memory
-    gt ?micro-pred = ?xop0, ?max-signed			; Check and see if first operand < 0 (or in our case greater than 127)
-    branch terminate if ?micro-pred				; If it is then terminate
-    incr ?xip = ?xip        					; increment the xand ip
-    load ?xop1 = ?xip, data 					; load the second operand into memory
-    gt ?micro-pred = ?xop1, ?max-signed			; check and see if the second operand < 0 (or in our case greater than 127)
-    branch terminate if ?micro-pred				; if it is then terminate
-    incr ?xip = ?xip        					; increment the xand ip
-    load ?xop2 = ?xip, data 					; load the third operand into memory
-    gt ?micro-pred = ?xop2, ?max-signed			; check and see if the third operand < 0 (or in our case greater than 127)
-    branch terminate if ?micro-pred				; terminate if it is < 0
-    incr ?xip = ?xip        					; increment xip
-												; at this point xip is ready to read the next instruction 
-												; an unintentional optimization
+    load ?xop0 = ?xip, data                     ; load the first operand into memory
+    gt ?micro-pred = ?xop0, ?max-signed         ; Check and see if first operand < 0 (or in our case greater than 127)
+    branch terminate if ?micro-pred             ; If it is then terminate
+    incr ?xip = ?xip                            ; increment the xand ip
+    load ?xop1 = ?xip, data                     ; load the second operand into memory
+    gt ?micro-pred = ?xop1, ?max-signed         ; check and see if the second operand < 0 (or in our case greater than 127)
+    branch terminate if ?micro-pred             ; if it is then terminate
+    incr ?xip = ?xip                            ; increment the xand ip
+    load ?xop2 = ?xip, data                     ; load the third operand into memory
+    gt ?micro-pred = ?xop2, ?max-signed         ; check and see if the third operand < 0 (or in our case greater than 127)
+    branch terminate if ?micro-pred             ; terminate if it is < 0
+    incr ?xip = ?xip                            ; increment xip
+                                                ; at this point xip is ready to read the next instruction 
+                                                ; an unintentional optimization
 ;-----------------------------------------------------------------------------
 ; Now the actual meat of the operation
 ; memory[a] -= memory[b]
 ; ip = if memory[a] <= 0 then c else ip + 3
 ;-----------------------------------------------------------------------------
-    load ?b = ?xop1, data   					; load the value pointed to by xop1
-												; we'll need to perform two's complement on it
-    not ?b = ?b									; invert the bits
-    add ?b = ?b, ?one							; add one
-												; By doing this we can always use an add operation 
-    load ?a = ?xop0, data   					; now load the value pointed to by xop0
-    add ?a = ?a, ?b								; ?a += ?b
-												; exploit the fact that we are using 16-bit registers
-												; to handle the bit overflow that would occur in normal two's 
-												; complement addition
-    and ?a = ?a, ?chop-mask						; We actually don't care about the upper 8 bits so mask it
-    store ?xop0 = ?a							; Save the result to the address in xop0
-												;
-	gt ?micro-pred = ?a, ?zero					; a <= 0 but in our case it has to be a != 0 && a <= 127
-	le ?micro-pred & ?a, ?max-signed			; 
-												;
-	branch ?done-addr if ?micro-pred			; don't store c in xip if conditions weren't met
-    move ?xip = ?xop2							; move c to ip
+    load ?b = ?xop1, data                       ; load the value pointed to by xop1
+                                                ; we'll need to perform two's complement on it
+    not ?b = ?b                                 ; invert the bits
+    add ?b = ?b, ?one                           ; add one
+                                                ; By doing this we can always use an add operation 
+    load ?a = ?xop0, data                       ; now load the value pointed to by xop0
+    add ?a = ?a, ?b                             ; ?a += ?b
+                                                ; exploit the fact that we are using 16-bit registers
+                                                ; to handle the bit overflow that would occur in normal two's 
+                                                ; complement addition
+    and ?a = ?a, ?chop-mask                     ; We actually don't care about the upper 8 bits so mask it
+    store ?xop0 = ?a                            ; Save the result to the address in xop0
+                                                ;
+    gt ?micro-pred = ?a, ?zero                  ; a <= 0 but in our case it has to be a != 0 && a <= 127
+    le ?micro-pred & ?a, ?max-signed            ; 
+                                                ;
+    branch ?done-addr if ?micro-pred            ; don't store c in xip if conditions weren't met
+    move ?xip = ?xop2                           ; move c to ip
 done:
-    return										; get the hell out of here
+    return                                      ; get the hell out of here
 
 terminate:
-    system #0, ?true, ?true 					; get out of here !
+    system #0, ?true, ?true                     ; get out of here !
 
 .data
 
-.org #x0			; ajvondrak's fib program converted (thanks lisp for helping :D)
+.org #x0            ; ajvondrak's fib program converted (thanks lisp for helping :D)
 xand_while_n_gt_2:
-	.word xand_three:
-	.word xand_n:
-	.word xand_continue:
+    .word xand_three:
+    .word xand_n:
+    .word xand_continue:
 xand_exit:
-	.word #xFF
+    .word #xFF
 xand_continue:
-	.word xand_zero:
-	.word xand_n:
-	.word xand_gen1:
+    .word xand_zero:
+    .word xand_n:
+    .word xand_gen1:
 xand_gen1:
-	.word xand_three:
-	.word xand_zero:
-	.word xand_gen2:
+    .word xand_three:
+    .word xand_zero:
+    .word xand_gen2:
 xand_gen2:
-	.word xand_zero:
-	.word xand_zero:
-	.word xand_gen3:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_gen3:
 xand_gen3:
 xand_copy_prev_to_prev2:
-	.word xand_prev2:
-	.word xand_prev2:
-	.word xand_gen4:
+    .word xand_prev2:
+    .word xand_prev2:
+    .word xand_gen4:
 xand_gen4:
-	.word xand_zero:
-	.word xand_prev:
-	.word xand_gen5:
+    .word xand_zero:
+    .word xand_prev:
+    .word xand_gen5:
 xand_gen5:
-	.word xand_prev2:
-	.word xand_zero:
-	.word xand_gen6:
+    .word xand_prev2:
+    .word xand_zero:
+    .word xand_gen6:
 xand_gen6:
-	.word xand_zero:
-	.word xand_zero:
-	.word xand_gen7:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_gen7:
 xand_gen7:
 xand_copy_fib_to_prev:
-	.word xand_prev:
-	.word xand_prev:
-	.word xand_gen8:
+    .word xand_prev:
+    .word xand_prev:
+    .word xand_gen8:
 xand_gen8:
-	.word xand_zero:
-	.word xand_fib:
-	.word xand_gen9:
+    .word xand_zero:
+    .word xand_fib:
+    .word xand_gen9:
 xand_gen9:
-	.word xand_prev:
-	.word xand_zero:
-	.word xand_gen10:
+    .word xand_prev:
+    .word xand_zero:
+    .word xand_gen10:
 xand_gen10:
-	.word xand_zero:
-	.word xand_zero:
-	.word xand_gen11:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_gen11:
 xand_gen11:
 xand_add_prev2_to_fib:
-	.word xand_zero:
-	.word xand_prev2:
-	.word xand_gen12:
+    .word xand_zero:
+    .word xand_prev2:
+    .word xand_gen12:
 xand_gen12:
-	.word xand_fib:
-	.word xand_zero:
-	.word xand_gen13:
+    .word xand_fib:
+    .word xand_zero:
+    .word xand_gen13:
 xand_gen13:
-	.word xand_zero:
-	.word xand_zero:
-	.word xand_gen14:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_gen14:
 xand_gen14:
 xand_loop:
-	.word xand_n:
-	.word xand_one:
-	.word xand_gen15:
+    .word xand_n:
+    .word xand_one:
+    .word xand_gen15:
 xand_gen15:
-	.word xand_zero:
-	.word xand_zero:
-	.word xand_while_n_gt_2:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_while_n_gt_2:
 xand_zero:
-	.word #0
+    .word #0
 xand_one:
-	.word #1
+    .word #1
 xand_three:
-	.word #3
+    .word #3
 xand_n:
-	.word #10
+    .word #10
 xand_prev2:
-	.word #0
+    .word #0
 xand_prev:
-	.word #1
+    .word #1
 xand_fib:
-	.word #1
+    .word #1
 .org #x7F
 end:
     .word #0
