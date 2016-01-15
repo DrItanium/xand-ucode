@@ -51,13 +51,15 @@
 .alias xop2 = r8                                ; third operand address
 .alias a = r9                                   ; memory[xop0]
 .alias b = r10                                  ; memory[xop1]
-.alias tmp0 = r12                               ; temporary registers
+.alias tmp = r12                                ; temporary register
 .alias chop-mask = r13                          ; 0xFF
 .alias done-addr = r15                          ; address of done label
 .alias xand-exec-addr = r16                     ; address of xand-exec label
 .alias terminate-addr = r17                     ; address of terminate label
 .alias xip = r18                                ; xand instruction pointer
 .alias max-signed = r19                         ; largest positive value (127)
+.alias tmp1 = r20
+.alias tmp2 = r21
 ;-----------------------------------------------------------------------------
 ; memory "cells"
 ;-----------------------------------------------------------------------------
@@ -226,31 +228,17 @@ loop:                                           ; program loop
 ; xip += 3
 ;-----------------------------------------------------------------------------
 xand_exec:
-    load ?xop0 = ?xip, data                     ; load the first operand into memory
-    gt ?micro-pred = ?xop0, ?max-signed         ; Check and see if first operand < 0 (or in our case greater than 127)
-    branch terminate if ?micro-pred             ; If it is then terminate
-    incr ?xip = ?xip                            ; increment the xand ip
-    load ?xop1 = ?xip, data                     ; load the second operand into memory
-    gt ?micro-pred = ?xop1, ?max-signed         ; check and see if the second operand < 0 (or in our case greater than 127)
-    branch terminate if ?micro-pred             ; if it is then terminate
-    incr ?xip = ?xip                            ; increment the xand ip
-    load ?xop2 = ?xip, data                     ; load the third operand into memory
-    gt ?micro-pred = ?xop2, ?max-signed         ; check and see if the third operand < 0 (or in our case greater than 127)
-    branch terminate if ?micro-pred             ; terminate if it is < 0
-    incr ?xip = ?xip                            ; increment xip
-                                                ; at this point xip is ready to read the next instruction 
-                                                ; an unintentional optimization
+    call next-instruction
 ;-----------------------------------------------------------------------------
 ; Now the actual meat of the operation
 ; memory[a] -= memory[b]
 ; ip = if memory[a] <= 0 then c else ip + 3
 ;-----------------------------------------------------------------------------
-    load ?b = ?xop1, data                       ; load the value pointed to by xop1
-                                                ; we'll need to perform two's complement on it
+    call load_xop1
     not ?b = ?b                                 ; invert the bits
     add ?b = ?b, ?one                           ; add one
                                                 ; By doing this we can always use an add operation 
-    load ?a = ?xop0, data                       ; now load the value pointed to by xop0
+    call load_xop0
     add ?a = ?a, ?b                             ; ?a += ?b
                                                 ; exploit the fact that we are using 16-bit registers
                                                 ; to handle the bit overflow that would occur in normal two's 
@@ -265,6 +253,9 @@ xand_exec:
     move ?xip = ?xop2                           ; move c to ip
 done:
     return                                      ; get the hell out of here
+
+terminate:
+    system #0, ?true, ?true                     ; get out of here !
 
 ;-----------------------------------------------------------------------------
 ; Instruction Pointer threaded argument checks
@@ -281,8 +272,38 @@ check-input:
     gt ?micro-pred = ?tmp, ?max-signed
     branch terminate if ?micro-pred
     return
-terminate:
-    system #0, ?true, ?true                     ; get out of here !
+load_xop0:
+    move ?in0 = ?xop0
+    branch vload
+load_xop1:
+    move ?in0 = ?xop1                         ; use xop1 as offset for some base
+vload:
+    set ?tmp = load_jump_table                ; Load base offset
+    branch indirect_memory_op
+store_xop0:
+    move ?in0 = ?xop0                         ; store the offset
+    move ?in1 = ?a                            ; value to store
+vstore:
+    set ?tmp = store_jump_table              ; exploit fallthrough
+    branch indirect_memory_op
+next_instruction:
+    set ?tmp = next_instruction_jump_table 
+    move ?in0 = ?xip
+indirect_memory_op:
+    add ?tmp1 = ?tmp, ?in0                    ; get the real offset
+    load ?tmp2 = ?tmp1, microcode              ; load address from microcode
+    branch ?tmp2                               ; branch to the target address so that we can return back to what called this function
+                                               ; at this point it will be impossible for any of these operations to be out of range!
+
+;-----------------------------------------------------------------------------
+; Autogenerated jump tables
+;-----------------------------------------------------------------------------
+
+
+
+
+
+
 
 .data
 
