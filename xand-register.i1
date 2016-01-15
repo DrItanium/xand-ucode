@@ -1,0 +1,377 @@
+;-----------------------------------------------------------------------------
+; xand-ucode
+; Copyright (c) 2015, Joshua Scoggins
+; All rights reserved.
+; 
+; Redistribution and use in source and binary forms, with or without
+; modification, are permitted provided that the following conditions are met:
+;     * Redistributions of source code must retain the above copyright
+;       notice, this list of conditions and the following disclaimer.
+;     * Redistributions in binary form must reproduce the above copyright
+;       notice, this list of conditions and the following disclaimer in the
+;       documentation and/or other materials provided with the distribution.
+; 
+; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+; ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+; WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+; DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR 
+; ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+; (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+; ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+;-----------------------------------------------------------------------------
+; xand microcode - using registers for memory instead of the data section
+;-----------------------------------------------------------------------------
+; go get github.com/DrItanium/cores
+; go install github.com/DrItanium/cores/cmd/rlasm
+; go install github.com/DrItanium/cores/cmd/rlsim
+; rlasm -target=iris1 -input=xand-register.i1 -output=xand-register.ucode 
+; rlsim -target=iris1 -output=xand-register.ucode
+; 
+; Watch nothing happen and then terminate
+;-----------------------------------------------------------------------------
+; System reserved registers (used by the processor internally)
+;-----------------------------------------------------------------------------
+.alias false = r0
+.alias true = r1
+.alias zero = r0
+.alias one = r1
+.alias micro-ip = r2
+.alias micro-sp = r3
+.alias micro-pred = r4
+.alias micro-cp = r5
+
+;-----------------------------------------------------------------------------
+; xand microcode internal registers
+;-----------------------------------------------------------------------------
+.alias xop0 = r6                                ; first operand address 
+.alias xop1 = r7                                ; second operand address 
+.alias xop2 = r8                                ; third operand address
+.alias a = r9                                   ; memory[xop0]
+.alias b = r10                                  ; memory[xop1]
+.alias tmp0 = r12                               ; temporary registers
+.alias chop-mask = r13                          ; 0xFF
+.alias done-addr = r15                          ; address of done label
+.alias xand-exec-addr = r16                     ; address of xand-exec label
+.alias terminate-addr = r17                     ; address of terminate label
+.alias xip = r18                                ; xand instruction pointer
+.alias max-signed = r19                         ; largest positive value (127)
+;-----------------------------------------------------------------------------
+; memory "cells"
+;-----------------------------------------------------------------------------
+.alias mem0 = r32
+.alias mem1 = r33
+.alias mem2 = r34
+.alias mem3 = r35
+.alias mem4 = r36
+.alias mem5 = r37
+.alias mem6 = r38
+.alias mem7 = r39
+.alias mem8 = r40
+.alias mem9 = r41
+.alias mem10 = r42
+.alias mem11 = r43
+.alias mem12 = r44
+.alias mem13 = r45
+.alias mem14 = r46
+.alias mem15 = r47
+.alias mem16 = r48
+.alias mem17 = r49
+.alias mem18 = r50
+.alias mem19 = r51
+.alias mem20 = r52
+.alias mem21 = r53
+.alias mem22 = r54
+.alias mem23 = r55
+.alias mem24 = r56
+.alias mem25 = r57
+.alias mem26 = r58
+.alias mem27 = r59
+.alias mem28 = r60
+.alias mem29 = r61
+.alias mem30 = r62
+.alias mem31 = r63
+.alias mem32 = r64
+.alias mem33 = r65
+.alias mem34 = r66
+.alias mem35 = r67
+.alias mem36 = r68
+.alias mem37 = r69
+.alias mem38 = r70
+.alias mem39 = r71
+.alias mem40 = r72
+.alias mem41 = r73
+.alias mem42 = r74
+.alias mem43 = r75
+.alias mem44 = r76
+.alias mem45 = r77
+.alias mem46 = r78
+.alias mem47 = r79
+.alias mem48 = r80
+.alias mem49 = r81
+.alias mem50 = r82
+.alias mem51 = r83
+.alias mem52 = r84
+.alias mem53 = r85
+.alias mem54 = r86
+.alias mem55 = r87
+.alias mem56 = r88
+.alias mem57 = r89
+.alias mem58 = r90
+.alias mem59 = r91
+.alias mem60 = r92
+.alias mem61 = r93
+.alias mem62 = r94
+.alias mem63 = r95
+.alias mem64 = r96
+.alias mem65 = r97
+.alias mem66 = r98
+.alias mem67 = r99
+.alias mem68 = r100
+.alias mem69 = r101
+.alias mem70 = r102
+.alias mem71 = r103
+.alias mem72 = r104
+.alias mem73 = r105
+.alias mem74 = r106
+.alias mem75 = r107
+.alias mem76 = r108
+.alias mem77 = r109
+.alias mem78 = r110
+.alias mem79 = r111
+.alias mem80 = r112
+.alias mem81 = r113
+.alias mem82 = r114
+.alias mem83 = r115
+.alias mem84 = r116
+.alias mem85 = r117
+.alias mem86 = r118
+.alias mem87 = r119
+.alias mem88 = r120
+.alias mem89 = r121
+.alias mem90 = r122
+.alias mem91 = r123
+.alias mem92 = r124
+.alias mem93 = r125
+.alias mem94 = r126
+.alias mem95 = r127
+.alias mem96 = r128
+.alias mem97 = r129
+.alias mem98 = r130
+.alias mem99 = r131
+.alias mem100 = r132
+.alias mem101 = r133
+.alias mem102 = r134
+.alias mem103 = r135
+.alias mem104 = r136
+.alias mem105 = r137
+.alias mem106 = r138
+.alias mem107 = r139
+.alias mem108 = r140
+.alias mem109 = r141
+.alias mem110 = r142
+.alias mem111 = r143
+.alias mem112 = r144
+.alias mem113 = r145
+.alias mem114 = r146
+.alias mem115 = r147
+.alias mem116 = r148
+.alias mem117 = r149
+.alias mem118 = r150
+.alias mem119 = r151
+.alias mem120 = r152
+.alias mem121 = r153
+.alias mem122 = r154
+.alias mem123 = r155
+.alias mem124 = r156
+.alias mem125 = r157
+.alias mem126 = r158
+.alias mem127 = r159
+.alias mem128 = r160 ; special register for overflow if you jump to mem126 or mem127
+.alias mem129 = r161 ; for regularity
+;-----------------------------------------------------------------------------
+; xand code loop
+; Some things to note:
+;   1) iris1 uses unsigned values everywhere (we must handle signed values in the microcode)
+;   2) registers are 16-bits wide (1 word)
+;   3) the data section is not byte oriented but word oriented (each address refers to a 16-bit value)
+;-----------------------------------------------------------------------------
+.code
+.org #x0
+init:
+    move ?xip = ?zero                           ; zero out the xand ip
+    set ?chop-mask = #x00FF                     ; chop mask of 0x00FF
+    move ?mem128 = ?chop-mask                   ; setup terminator code body
+    move ?mem129 = ?chop-mask                   ; setup terminator code body
+    set ?max-signed = #127                      ; largest positive value (grrr signed bytes)
+    set ?done-addr = done                       ; done address
+    set ?xand-exec-addr = xand_exec             ; address of xand-exec
+    set ?terminate-addr = terminate             ; address of terminate register
+
+loop:                                           ; program loop
+    gt ?micro-pred = ?xip, ?max-signed          ; is the xand-ip > than max-signed?
+    call if ?micro-pred then ?terminate-addr else ?xand-exec-addr 
+    branch loop                                 ; keep looping
+
+;-----------------------------------------------------------------------------
+; The decode and potentially terminate phase
+; a = memory[xip]
+; terminate if a < 0
+; b = memory[xip + 1]
+; terminate if b < 0
+; c = memory[xip + 2]
+; terminate if c < 0
+; xip += 3
+;-----------------------------------------------------------------------------
+xand_exec:
+    load ?xop0 = ?xip, data                     ; load the first operand into memory
+    gt ?micro-pred = ?xop0, ?max-signed         ; Check and see if first operand < 0 (or in our case greater than 127)
+    branch terminate if ?micro-pred             ; If it is then terminate
+    incr ?xip = ?xip                            ; increment the xand ip
+    load ?xop1 = ?xip, data                     ; load the second operand into memory
+    gt ?micro-pred = ?xop1, ?max-signed         ; check and see if the second operand < 0 (or in our case greater than 127)
+    branch terminate if ?micro-pred             ; if it is then terminate
+    incr ?xip = ?xip                            ; increment the xand ip
+    load ?xop2 = ?xip, data                     ; load the third operand into memory
+    gt ?micro-pred = ?xop2, ?max-signed         ; check and see if the third operand < 0 (or in our case greater than 127)
+    branch terminate if ?micro-pred             ; terminate if it is < 0
+    incr ?xip = ?xip                            ; increment xip
+                                                ; at this point xip is ready to read the next instruction 
+                                                ; an unintentional optimization
+;-----------------------------------------------------------------------------
+; Now the actual meat of the operation
+; memory[a] -= memory[b]
+; ip = if memory[a] <= 0 then c else ip + 3
+;-----------------------------------------------------------------------------
+    load ?b = ?xop1, data                       ; load the value pointed to by xop1
+                                                ; we'll need to perform two's complement on it
+    not ?b = ?b                                 ; invert the bits
+    add ?b = ?b, ?one                           ; add one
+                                                ; By doing this we can always use an add operation 
+    load ?a = ?xop0, data                       ; now load the value pointed to by xop0
+    add ?a = ?a, ?b                             ; ?a += ?b
+                                                ; exploit the fact that we are using 16-bit registers
+                                                ; to handle the bit overflow that would occur in normal two's 
+                                                ; complement addition
+    and ?a = ?a, ?chop-mask                     ; We actually don't care about the upper 8 bits so mask it
+    store ?xop0 = ?a                            ; Save the result to the address in xop0
+                                                ;
+    gt ?micro-pred = ?a, ?zero                  ; a <= 0 but in our case it has to be a != 0 && a <= 127
+    le ?micro-pred & ?a, ?max-signed            ; 
+                                                ;
+    branch ?done-addr if ?micro-pred            ; don't store c in xip if conditions weren't met
+    move ?xip = ?xop2                           ; move c to ip
+done:
+    return                                      ; get the hell out of here
+
+;-----------------------------------------------------------------------------
+; Instruction Pointer threaded argument checks
+;-----------------------------------------------------------------------------
+check-xop0:
+    move ?tmp = ?xop0
+    branch check-input
+check-xop1:
+    move ?tmp = ?xop1
+    branch check-input
+check-xop2:
+    move ?tmp = ?xop2
+check-input:
+    gt ?micro-pred = ?tmp, ?max-signed
+    branch terminate if ?micro-pred
+    return
+terminate:
+    system #0, ?true, ?true                     ; get out of here !
+
+.data
+
+.org #x0            ; ajvondrak's fib program converted (thanks lisp for helping :D)
+xand_while_n_gt_2:
+    .word xand_three:
+    .word xand_n:
+    .word xand_continue:
+xand_exit:
+    .word #xFF
+xand_continue:
+    .word xand_zero:
+    .word xand_n:
+    .word xand_gen1:
+xand_gen1:
+    .word xand_three:
+    .word xand_zero:
+    .word xand_gen2:
+xand_gen2:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_gen3:
+xand_gen3:
+xand_copy_prev_to_prev2:
+    .word xand_prev2:
+    .word xand_prev2:
+    .word xand_gen4:
+xand_gen4:
+    .word xand_zero:
+    .word xand_prev:
+    .word xand_gen5:
+xand_gen5:
+    .word xand_prev2:
+    .word xand_zero:
+    .word xand_gen6:
+xand_gen6:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_gen7:
+xand_gen7:
+xand_copy_fib_to_prev:
+    .word xand_prev:
+    .word xand_prev:
+    .word xand_gen8:
+xand_gen8:
+    .word xand_zero:
+    .word xand_fib:
+    .word xand_gen9:
+xand_gen9:
+    .word xand_prev:
+    .word xand_zero:
+    .word xand_gen10:
+xand_gen10:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_gen11:
+xand_gen11:
+xand_add_prev2_to_fib:
+    .word xand_zero:
+    .word xand_prev2:
+    .word xand_gen12:
+xand_gen12:
+    .word xand_fib:
+    .word xand_zero:
+    .word xand_gen13:
+xand_gen13:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_gen14:
+xand_gen14:
+xand_loop:
+    .word xand_n:
+    .word xand_one:
+    .word xand_gen15:
+xand_gen15:
+    .word xand_zero:
+    .word xand_zero:
+    .word xand_while_n_gt_2:
+xand_zero:
+    .word #0
+xand_one:
+    .word #1
+xand_three:
+    .word #3
+xand_n:
+    .word #10
+xand_prev2:
+    .word #0
+xand_prev:
+    .word #1
+xand_fib:
+    .word #1
