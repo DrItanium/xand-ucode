@@ -1,0 +1,201 @@
+;-----------------------------------------------------------------------------
+;xand-ucode
+;Copyright (c) 2015, Joshua Scoggins
+;All rights reserved.
+;
+;Redistribution and use in source and binary forms, with or without
+;modification, are permitted provided that the following conditions are met:
+;    * Redistributions of source code must retain the above copyright
+;      notice, this list of conditions and the following disclaimer.
+;    * Redistributions in binary form must reproduce the above copyright
+;      notice, this list of conditions and the following disclaimer in the
+;      documentation and/or other materials provided with the distribution.
+;
+;THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+;ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+;WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+;DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR 
+;ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+;(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+;LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+;ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+;(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+;SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+;-----------------------------------------------------------------------------
+; xand microcode
+;-----------------------------------------------------------------------------
+; go get github.com/DrItanium/cores
+; go install github.com/DrItanium/cores/cmd/rlasm
+; go install github.com/DrItanium/cores/cmd/rlsim
+; rlasm -target=iris1 -input=xand.i1 -output=xand.ucode 
+; rlsim -target=iris1 -output=xand.ucode
+; 
+; Watch nothing happen and then terminate
+;-----------------------------------------------------------------------------
+; System reserved registers
+;-----------------------------------------------------------------------------
+.alias false = r0
+.alias true = r1
+.alias zero = r0
+.alias one = r1
+.alias micro-ip = r2
+.alias micro-sp = r3
+.alias micro-pred = r4
+.alias micro-cp = r5
+
+;-----------------------------------------------------------------------------
+; xand microcode internal registers
+;-----------------------------------------------------------------------------
+.alias xop0 = r6															; first operand address 
+.alias xop1 = r7															; second operand address 
+.alias xop2 = r8															; third operand address
+.alias a = r9																; memory[xop0]
+.alias b = r10																; memory[xop1]
+.alias tmp0 = r12															; temporary registers
+.alias chop-mask = r13														; 0xFF
+.alias jump-to-c-addr = r14													; address of jump_to_c label
+.alias done-addr = r15														; address of done label
+.alias xand-exec-addr = r16 												; address of xand-exec label
+.alias terminate-addr = r17													; address of terminate label
+.alias xip = r32															; xand instruction pointer
+.alias max-signed = r33														; largest positive value (127)
+
+.code
+.org #x0
+init:
+    move ?xip = ?zero       												; zero out the xand ip
+    set ?chop-mask = #x00FF 												; chop mask of 0x00FF
+    set ?max-signed = #127  												; largest positive value (grrr signed bytes)
+    set ?jump-to-c-addr = jump_to_c 										; jump_to_c address
+    set ?done-addr = done           										; done address
+    set ?xand-exec-addr = xand_exec 										; address of xand-exec
+    set ?terminate-addr = terminate 										; 
+loop:
+    gt ?micro-pred = ?xip, ?max-signed
+    call if ?micro-pred then ?terminate-addr else ?xand-exec-addr
+    branch loop
+
+xand_exec:
+decode:
+    load ?xop0 = ?xip, data ; load the first operand into memory
+    gt ?micro-pred = ?xop0, ?max-signed
+    branch terminate if ?micro-pred
+    incr ?xip = ?xip        ; next
+    load ?xop1 = ?xip, data ; load the second operand into memory
+    gt ?micro-pred = ?xop1, ?max-signed
+    branch terminate if ?micro-pred
+    incr ?xip = ?xip        ; next
+    load ?xop2 = ?xip, data ; load the third operand into memory
+    gt ?micro-pred = ?xop2, ?max-signed
+    branch terminate if ?micro-pred
+    incr ?xip = ?xip        ; ready for the next instruction
+compute:
+    load ?b = ?xop1, data   ; perform two's complement first of b
+    not ?b = ?b
+    add ?b = ?b, ?one
+    load ?a = ?xop0, data   ; now load a
+    add ?a = ?a, ?b
+    and ?a = ?a, ?chop-mask
+    store ?xop0 = ?a
+    gt ?micro-pred = ?a, ?max-signed
+    branch if ?micro-pred then ?jump-to-c-addr else ?done-addr
+jump_to_c:
+    move ?xip = ?xop2
+done:
+
+    return
+
+terminate:
+    system #0, ?true, ?true ; get out of here !
+.data
+xand_while_n_gt_2:
+	.word xand_three:
+	.word xand_n:
+	.word xand_continue:
+xand_exit:
+	.word #xFF
+xand_continue:
+	.word xand_zero:
+	.word xand_n:
+	.word xand_gen1:
+xand_gen1:
+	.word xand_three:
+	.word xand_zero:
+	.word xand_gen2:
+xand_gen2:
+	.word xand_zero:
+	.word xand_zero:
+	.word xand_gen3:
+xand_gen3:
+xand_copy_prev_to_prev2:
+	.word xand_prev2:
+	.word xand_prev2:
+	.word xand_gen4:
+xand_gen4:
+	.word xand_zero:
+	.word xand_prev:
+	.word xand_gen5:
+xand_gen5:
+	.word xand_prev2:
+	.word xand_zero:
+	.word xand_gen6:
+xand_gen6:
+	.word xand_zero:
+	.word xand_zero:
+	.word xand_gen7:
+xand_gen7:
+xand_copy_fib_to_prev:
+	.word xand_prev:
+	.word xand_prev:
+	.word xand_gen8:
+xand_gen8:
+	.word xand_zero:
+	.word xand_fib:
+	.word xand_gen9:
+xand_gen9:
+	.word xand_prev:
+	.word xand_zero:
+	.word xand_gen10:
+xand_gen10:
+	.word xand_zero:
+	.word xand_zero:
+	.word xand_gen11:
+xand_gen11:
+xand_add_prev2_to_fib:
+	.word xand_zero:
+	.word xand_prev2:
+	.word xand_gen12:
+xand_gen12:
+	.word xand_fib:
+	.word xand_zero:
+	.word xand_gen13:
+xand_gen13:
+	.word xand_zero:
+	.word xand_zero:
+	.word xand_gen14:
+xand_gen14:
+xand_loop:
+	.word xand_n:
+	.word xand_one:
+	.word xand_gen15:
+xand_gen15:
+	.word xand_zero:
+	.word xand_zero:
+	.word xand_while_n_gt_2:
+xand_zero:
+	.word #0
+xand_one:
+	.word #1
+xand_three:
+	.word #3
+xand_n:
+	.word #10
+xand_prev2:
+	.word #0
+xand_prev:
+	.word #1
+xand_fib:
+	.word #1
+.org #x7F
+end:
+    .word #0
